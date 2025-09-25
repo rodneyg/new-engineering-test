@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Simple components */
+.btn {
+  @apply px-3 py-2 rounded-md text-sm font-medium;
+}
+.btn-primary {
+  @apply bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50;
+}
+.input {
+  @apply w-full border rounded-md p-2;
+}
+.textarea {
+  @apply w-full border rounded-md p-2;
+}
+.msg-user {
+  @apply bg-blue-50 border border-blue-200;
+}
+.msg-ai {
+  @apply bg-gray-50 border border-gray-200;
+}

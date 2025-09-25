@@ -1,0 +1,11 @@
+__pycache__/
+.venv/
+.env
+db.sqlite3
+*.pyc
+node_modules/
+static/app/
+dist/
+uv.lock
+.DS_Store
+
