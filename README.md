@@ -1,18 +1,35 @@
-AI Chat — Django + DRF + Gemini + Vite
+# The Task
 
-Overview
+You have been given a simple Django-based chat application that connects users to an AI assistant. Currently, the system handles basic conversations but provides no way to understand whether users find the AI responses helpful or not. 
+
+Your task is to build a mechanism that captures user feedback and transforms that data into actionable insights. Additionally, build a screen where we can see those insights and statistics.
+
+How else can you improve the application?
+
+## Guidelines
+1. We expect you to spend 30-60 minutes in total.
+2. We want to see how you think and your decision making process.
+3. We expect you to use AI heavily to help with this task.
+4. If you have any issues, please reach out to us.
+
+## Deliverables
+1. Working Code with setup instructions
+2. AI_PROMPTS.md - All prompts used, organized chronologically
+3. DECISIONS.md - What decisions you made and why
+
+## Technical Overview
 
 - Backend: Django 5 + DRF, SQLite for local dev
 - Frontend: Vite + TypeScript + Tailwind, built to `static/app/`
 - AI: Google Gemini via `google-generativeai` (no streaming)
 
-Prerequisites
+### Prerequisites
 
 - Python 3.11+
 - uv (https://docs.astral.sh/uv/) for Python deps
 - Node.js 18+ (recommended 20+) and npm
 
-Setup
+### Setup
 
 1. Install Python deps
    - `make uv-sync`
@@ -24,14 +41,14 @@ Setup
 4. Build frontend assets
    - `make build-frontend`
 
-Run (development)
+### Run (development)
 
 - Start Django dev server:
   - `make run`
   - Requires `GEMINI_API_KEY` to be set; the server exits with an error if missing.
 - Open `http://127.0.0.1:8000/` — the Vite-built app is served via Django templates.
 
-APIs
+### APIs
 
 - `POST /api/conversations/` → create conversation (optional `title`)
 - `GET /api/conversations/?offset=&limit=` → list conversations (newest first)
@@ -39,11 +56,11 @@ APIs
 - `GET /api/conversations/{id}/messages?since=&limit=` → list messages after sequence
 - `POST /api/conversations/{id}/messages/` → send user message; returns `{ user_message, ai_message }`
 
-Tests
+### Tests
 
 - `make test`
 
-Notes
+### Notes
 
 - If `GEMINI_API_KEY` is missing, sending a message returns HTTP 502 with a clear error.
 - The frontend polling interval is 3s; max message length is 1000 chars.
