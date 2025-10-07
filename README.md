@@ -7,10 +7,11 @@ Your task is to build a mechanism that captures user feedback and transforms tha
 How else can you improve the application?
 
 ## Guidelines
-1. We expect you to spend roughly 60 minutes.
-2. We want to see how you think and your decision making process.
-3. We expect you to use AI heavily to help with this task.
-4. If you have any issues, please reach out to us.
+1. Please fork this repository and send us the url.
+2. We expect you to spend roughly 60 minutes.
+3. We want to see how you think and your decision making process.
+4. We expect you to use AI heavily to help with this task.
+5. If you have any issues, please reach out to us.
 
 ## Deliverables
 1. Working Code with setup instructions
@@ -18,7 +19,6 @@ How else can you improve the application?
 3. DECISIONS.md - What decisions you made and why. This **should not** be AI generated. Use your own words.
 
 ## Technical Overview
-
 - Backend: Django 5 + DRF, SQLite for local dev
 - Frontend: Vite + TypeScript + Tailwind, built to `static/app/`
 - AI: Google Gemini via `google-generativeai` (no streaming)
