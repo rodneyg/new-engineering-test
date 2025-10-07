@@ -7,7 +7,7 @@ Your task is to build a mechanism that captures user feedback and transforms tha
 How else can you improve the application?
 
 ## Guidelines
-1. We expect you to spend 30-60 minutes in total.
+1. We expect you to spend roughly 60 minutes.
 2. We want to see how you think and your decision making process.
 3. We expect you to use AI heavily to help with this task.
 4. If you have any issues, please reach out to us.
@@ -15,7 +15,7 @@ How else can you improve the application?
 ## Deliverables
 1. Working Code with setup instructions
 2. AI_PROMPTS.md - All prompts used, organized chronologically
-3. DECISIONS.md - What decisions you made and why
+3. DECISIONS.md - What decisions you made and why. This **should not** be AI generated. Use your own words.
 
 ## Technical Overview
 
