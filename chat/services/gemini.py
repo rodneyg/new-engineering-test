@@ -9,7 +9,7 @@ class GeminiServiceError(RuntimeError):
 
 
 def _get_model_name() -> str:
-    return os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+    return os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
 
 
 def generate_reply(history: List[Dict[str, str]], prompt: str, timeout_s: int = 10) -> str:
@@ -54,4 +54,3 @@ def generate_reply(history: List[Dict[str, str]], prompt: str, timeout_s: int = 
         return text
     except Exception as e:
         raise GeminiServiceError(f"Gemini request failed: {e}")
-

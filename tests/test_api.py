@@ -44,6 +44,28 @@ def test_message_flow_with_mocked_gemini(client, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_message_flow_fallback_when_gemini_unavailable(client, monkeypatch, settings):
+    settings.DEBUG = True
+
+    resp = client.post("/api/conversations/", data=json.dumps({}), content_type="application/json")
+    conv = resp.json()
+
+    from chat.services import gemini
+
+    def failing_reply(history, prompt, timeout_s=10):
+        raise gemini.GeminiServiceError("service down")
+
+    monkeypatch.setattr(gemini, "generate_reply", failing_reply)
+
+    url = f"/api/conversations/{conv['id']}/messages/"
+    send = client.post(url, data=json.dumps({"text": "Hello"}), content_type="application/json")
+    assert send.status_code == 201
+    payload = send.json()
+    assert payload["ai_message"]["role"] == "ai"
+    assert payload["ai_message"]["text"].startswith("(Gemini unavailable)")
+
+
+@pytest.mark.django_db
 def test_submit_feedback_and_update(client):
     conv = Conversation.objects.create(title="Feedback Test")
     ai_msg = Message.objects.create(conversation=conv, role=Message.ROLE_AI, text="Assistant reply")

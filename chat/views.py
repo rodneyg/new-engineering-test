@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.db.models import QuerySet, Count, Q, Max
 from rest_framework import status
@@ -84,8 +85,10 @@ class MessageListCreateView(APIView):
         try:
             reply = gemini.generate_reply(history=history, prompt=text, timeout_s=10)
         except gemini.GeminiServiceError as e:
-            # Remove user message to keep integrity if AI fails? We keep it and surface 502.
-            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+            if settings.DEBUG or getattr(settings, "GEMINI_ALLOW_FALLBACK", False):
+                reply = f"(Gemini unavailable) {e}"
+            else:
+                return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
         ai_msg = Message.objects.create(conversation=conv, role=Message.ROLE_AI, text=reply)
         return Response({
