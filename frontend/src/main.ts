@@ -76,8 +76,18 @@ async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
     credentials: 'same-origin',
     ...opts,
   })
-  if (!resp.ok) throw new Error(await resp.text())
-  return resp.json()
+  const bodyText = await resp.text()
+  if (!resp.ok) {
+    throw new Error(bodyText || resp.statusText)
+  }
+  if (!bodyText.trim()) {
+    return undefined as T
+  }
+  try {
+    return JSON.parse(bodyText) as T
+  } catch (err) {
+    throw new Error(`Failed to parse JSON response: ${err}`)
+  }
 }
 
 async function loadConversations() {
@@ -96,6 +106,43 @@ async function createConversation(title?: string) {
   })
   state.conversations.unshift(data)
   selectConversation(data.id)
+}
+
+async function deleteConversation(conversationId: number) {
+  const convo = state.conversations.find((c) => c.id === conversationId)
+  const label = convo?.title ? `"${convo.title}"` : 'this conversation'
+  if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+
+  try {
+    await api<void>(`conversations/${conversationId}/`, { method: 'DELETE' })
+  } catch (err) {
+    console.error(err)
+    alert('Failed to delete conversation. Please try again.')
+    return
+  }
+
+  state.conversations = state.conversations.filter((c) => c.id !== conversationId)
+  const wasCurrent = state.current?.id === conversationId
+  const next = state.conversations[0] ?? null
+
+  if (wasCurrent) {
+    state.current = null
+    state.messages = []
+    state.lastSeq = 0
+    state.feedbackDrafts = {}
+    state.feedbackSubmitting = {}
+    if (next) {
+      selectConversation(next.id)
+    } else {
+      render()
+    }
+  } else {
+    render()
+  }
+
+  if (state.showInsights) {
+    await loadInsights()
+  }
 }
 
 function selectConversation(conversationId: number) {
@@ -249,11 +296,21 @@ function render() {
           .map(
             (c) => `
           <li class="p-2 ${state.current?.id === c.id ? 'bg-blue-50' : ''}">
-            <button data-cid="${c.id}" class="w-full text-left">
-              ${escapeHtml(c.title ?? 'Untitled')}
-              <br>
-              <span class="text-xs text-gray-500">${new Date(c.updated_at).toLocaleString()}</span>
-            </button>
+            <div class="flex items-start justify-between gap-2">
+              <button data-cid="${c.id}" class="flex-1 text-left">
+                ${escapeHtml(c.title ?? 'Untitled')}
+                <br>
+                <span class="text-xs text-gray-500">${new Date(c.updated_at).toLocaleString()}</span>
+              </button>
+              <button
+                data-delete-cid="${c.id}"
+                class="text-xs text-red-600 hover:text-red-800 focus:outline-none"
+                title="Delete conversation"
+                aria-label="Delete conversation"
+              >
+                Delete
+              </button>
+            </div>
           </li>
         `
           )
@@ -294,6 +351,15 @@ function render() {
     el.addEventListener('click', () => {
       const cid = Number((el as HTMLElement).dataset.cid)
       selectConversation(cid)
+    })
+  })
+  document.querySelectorAll('[data-delete-cid]')?.forEach((el) => {
+    el.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const cid = Number((el as HTMLElement).dataset.deleteCid)
+      if (!Number.isFinite(cid)) return
+      await deleteConversation(cid)
     })
   })
   document.getElementById('toggle-insights')?.addEventListener('click', async () => {

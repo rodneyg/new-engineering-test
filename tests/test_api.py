@@ -13,6 +13,18 @@ def test_create_conversation(client):
 
 
 @pytest.mark.django_db
+def test_delete_conversation_removes_messages(client):
+    conv = Conversation.objects.create(title="Old chat")
+    Message.objects.create(conversation=conv, role=Message.ROLE_USER, text="Hello")
+
+    url = f"/api/conversations/{conv.id}/"
+    resp = client.delete(url)
+    assert resp.status_code == 204
+    assert Conversation.objects.filter(id=conv.id).count() == 0
+    assert Message.objects.filter(conversation_id=conv.id).count() == 0
+
+
+@pytest.mark.django_db
 def test_message_flow_with_mocked_gemini(client, monkeypatch):
     # Create conversation
     resp = client.post("/api/conversations/", data=json.dumps({}), content_type="application/json")
