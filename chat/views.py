@@ -17,6 +17,7 @@ from .serializers import (
     CreateFeedbackSerializer,
 )
 from .services import gemini
+from .throttles import MessageRateThrottle
 
 
 class ConversationListCreateView(APIView):
@@ -53,6 +54,7 @@ class ConversationDetailView(APIView):
 
 
 class MessageListCreateView(APIView):
+    throttle_classes = [MessageRateThrottle]
     def get(self, request: Request, pk: int) -> Response:
         conv = get_object_or_404(Conversation, pk=pk)
         try:

@@ -1,5 +1,6 @@
 import json
 import pytest
+from django.core.cache import cache
 from chat.models import Conversation, Message, MessageFeedback
 
 
@@ -75,6 +76,33 @@ def test_message_flow_fallback_when_gemini_unavailable(client, monkeypatch, sett
     payload = send.json()
     assert payload["ai_message"]["role"] == "ai"
     assert payload["ai_message"]["text"].startswith("(Gemini unavailable)")
+
+
+@pytest.mark.django_db
+def test_message_rate_limiting(client, monkeypatch, settings):
+    cache.clear()
+    settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["message"] = "2/minute"
+
+    resp = client.post("/api/conversations/", data=json.dumps({}), content_type="application/json")
+    conv = resp.json()
+
+    from chat.services import gemini
+
+    monkeypatch.setattr(gemini, "generate_reply", lambda history, prompt, timeout_s=10: "ok")
+
+    url = f"/api/conversations/{conv['id']}/messages/"
+    body = json.dumps({"text": "Hello"})
+    headers = {"content_type": "application/json"}
+
+    first = client.post(url, data=body, **headers)
+    second = client.post(url, data=body, **headers)
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    third = client.post(url, data=body, **headers)
+    assert third.status_code == 429
+    detail = third.json().get("detail", "").lower()
+    assert "throttle" in detail or "rate" in detail
 
 
 @pytest.mark.django_db
