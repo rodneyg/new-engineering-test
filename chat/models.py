@@ -57,3 +57,32 @@ class Message(models.Model):
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.conversation_id}#{self.sequence}:{self.role}"
 
+
+class MessageFeedback(models.Model):
+    message = models.OneToOneField(Message, related_name="feedback", on_delete=models.CASCADE)
+    conversation = models.ForeignKey(
+        Conversation,
+        related_name="feedbacks",
+        on_delete=models.CASCADE,
+        editable=False,
+    )
+    is_helpful = models.BooleanField()
+    comment = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "id"]
+        indexes = [
+            models.Index(fields=["conversation", "created_at"]),
+            models.Index(fields=["conversation", "is_helpful"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.message.role != Message.ROLE_AI:
+            raise ValueError("Feedback can only be attached to AI messages.")
+        self.conversation = self.message.conversation
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:  # pragma: no cover
+        status = "helpful" if self.is_helpful else "not helpful"
+        return f"Feedback on message {self.message_id} ({status})"
