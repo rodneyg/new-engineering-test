@@ -13,4 +13,5 @@ urlpatterns = [
         name="message-feedback",
     ),
     path("insights/", views.InsightsView.as_view(), name="insights"),
+    path("insights/actionable/", views.ActionableInsightsView.as_view(), name="insights-actionable"),
 ]

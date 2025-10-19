@@ -106,6 +106,60 @@ def test_message_rate_limiting(client, monkeypatch, settings):
 
 
 @pytest.mark.django_db
+def test_actionable_insights_success(client, monkeypatch):
+    cache.clear()
+    conv = Conversation.objects.create(title="Data")
+    msg = Message.objects.create(conversation=conv, role=Message.ROLE_AI, text="Answer")
+    MessageFeedback.objects.create(message=msg, is_helpful=False, comment="Too short")
+
+    from chat.services import gemini
+
+    monkeypatch.setattr(
+        gemini,
+        "generate_actionable_insights",
+        lambda summary, timeout_s=15: "- Improve onboarding\n- Update docs",
+    )
+
+    resp = client.post("/api/insights/actionable/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["insights"].startswith("- ")
+
+
+@pytest.mark.django_db
+def test_actionable_insights_raises_502_when_disabled(client, monkeypatch, settings):
+    cache.clear()
+    settings.DEBUG = False
+    from chat.services import gemini
+
+    def boom(summary, timeout_s=15):
+        raise gemini.GeminiServiceError("nope")
+
+    monkeypatch.setattr(gemini, "generate_actionable_insights", boom)
+
+    resp = client.post("/api/insights/actionable/")
+    assert resp.status_code == 502
+    assert "detail" in resp.json()
+
+
+@pytest.mark.django_db
+def test_actionable_insights_returns_placeholder_when_debug(client, monkeypatch, settings):
+    cache.clear()
+    settings.DEBUG = True
+    from chat.services import gemini
+
+    def boom(summary, timeout_s=15):
+        raise gemini.GeminiServiceError("down")
+
+    monkeypatch.setattr(gemini, "generate_actionable_insights", boom)
+
+    resp = client.post("/api/insights/actionable/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["insights"].startswith("(Gemini unavailable)")
+
+
+@pytest.mark.django_db
 def test_submit_feedback_and_update(client):
     conv = Conversation.objects.create(title="Feedback Test")
     ai_msg = Message.objects.create(conversation=conv, role=Message.ROLE_AI, text="Assistant reply")

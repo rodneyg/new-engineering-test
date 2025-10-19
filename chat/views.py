@@ -17,7 +17,64 @@ from .serializers import (
     CreateFeedbackSerializer,
 )
 from .services import gemini
-from .throttles import MessageRateThrottle
+from .throttles import MessageRateThrottle, InsightsRateThrottle
+
+
+def _build_feedback_summary() -> dict:
+    feedback_qs = MessageFeedback.objects.select_related("conversation", "message")
+    total = feedback_qs.count()
+    helpful = feedback_qs.filter(is_helpful=True).count()
+    not_helpful = total - helpful
+    helpful_rate = helpful / total if total else 0.0
+
+    per_conversation_raw = (
+        feedback_qs.values("conversation_id", "conversation__title")
+        .annotate(
+            feedback_count=Count("id"),
+            helpful_count=Count("id", filter=Q(is_helpful=True)),
+            not_helpful_count=Count("id", filter=Q(is_helpful=False)),
+            last_feedback_at=Max("created_at"),
+        )
+        .order_by("-feedback_count", "-last_feedback_at")[:20]
+    )
+
+    per_conversation = [
+        {
+            "conversation_id": row["conversation_id"],
+            "title": row["conversation__title"],
+            "feedback_count": row["feedback_count"],
+            "helpful_count": row["helpful_count"],
+            "not_helpful_count": row["not_helpful_count"],
+            "helpful_rate": (
+                row["helpful_count"] / row["feedback_count"] if row["feedback_count"] else 0.0
+            ),
+            "last_feedback_at": row["last_feedback_at"],
+        }
+        for row in per_conversation_raw
+    ]
+
+    recent_feedback = [
+        {
+            "id": fb.id,
+            "conversation_id": fb.conversation_id,
+            "message_id": fb.message_id,
+            "title": fb.conversation.title,
+            "is_helpful": fb.is_helpful,
+            "comment": fb.comment,
+            "created_at": fb.created_at,
+            "message_preview": fb.message.text[:200],
+        }
+        for fb in feedback_qs.order_by("-created_at")[:10]
+    ]
+
+    return {
+        "total_feedback": total,
+        "helpful_count": helpful,
+        "not_helpful_count": not_helpful,
+        "helpful_rate": helpful_rate,
+        "per_conversation": per_conversation,
+        "recent_feedback": recent_feedback,
+    }
 
 
 class ConversationListCreateView(APIView):
@@ -132,58 +189,19 @@ class MessageFeedbackView(APIView):
 
 class InsightsView(APIView):
     def get(self, request: Request) -> Response:
-        feedback_qs = MessageFeedback.objects.select_related("conversation", "message")
-        total = feedback_qs.count()
-        helpful = feedback_qs.filter(is_helpful=True).count()
-        not_helpful = total - helpful
-        helpful_rate = helpful / total if total else 0.0
+        return Response(_build_feedback_summary())
 
-        per_conversation_raw = (
-            feedback_qs.values("conversation_id", "conversation__title")
-            .annotate(
-                feedback_count=Count("id"),
-                helpful_count=Count("id", filter=Q(is_helpful=True)),
-                not_helpful_count=Count("id", filter=Q(is_helpful=False)),
-                last_feedback_at=Max("created_at"),
-            )
-            .order_by("-feedback_count", "-last_feedback_at")[:20]
-        )
 
-        per_conversation = [
-            {
-                "conversation_id": row["conversation_id"],
-                "title": row["conversation__title"],
-                "feedback_count": row["feedback_count"],
-                "helpful_count": row["helpful_count"],
-                "not_helpful_count": row["not_helpful_count"],
-                "helpful_rate": (
-                    row["helpful_count"] / row["feedback_count"] if row["feedback_count"] else 0.0
-                ),
-                "last_feedback_at": row["last_feedback_at"],
-            }
-            for row in per_conversation_raw
-        ]
+class ActionableInsightsView(APIView):
+    throttle_classes = [InsightsRateThrottle]
 
-        recent_feedback = [
-            {
-                "id": fb.id,
-                "conversation_id": fb.conversation_id,
-                "message_id": fb.message_id,
-                "title": fb.conversation.title,
-                "is_helpful": fb.is_helpful,
-                "comment": fb.comment,
-                "created_at": fb.created_at,
-                "message_preview": fb.message.text[:200],
-            }
-            for fb in feedback_qs.order_by("-created_at")[:10]
-        ]
-
-        data = {
-            "total_feedback": total,
-            "helpful_count": helpful,
-            "not_helpful_count": not_helpful,
-            "helpful_rate": helpful_rate,
-            "per_conversation": per_conversation,
-            "recent_feedback": recent_feedback,
-        }
-        return Response(data)
+    def post(self, request: Request) -> Response:
+        summary = _build_feedback_summary()
+        try:
+            text = gemini.generate_actionable_insights(summary, timeout_s=15)
+        except gemini.GeminiServiceError as e:
+            if settings.DEBUG or getattr(settings, "GEMINI_ALLOW_FALLBACK", False):
+                text = f"(Gemini unavailable) {e}"
+            else:
+                return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({"insights": text})

@@ -37,7 +37,7 @@ How else can you improve the application?
    - `cp .env.example .env`
    - Set `GEMINI_API_KEY` in `.env`
    - Optional: change `GEMINI_MODEL` (defaults to `models/gemini-2.5-flash-lite`)
-   - Optional: tune `MESSAGE_RATE_LIMIT` (`20/minute` by default, use `<count>/<period>`)
+   - Optional: tune `MESSAGE_RATE_LIMIT` (`20/minute`) and `INSIGHTS_RATE_LIMIT` (`5/minute`) using `<count>/<period>` syntax.
 3. Initialize DB
    - `uv run python manage.py migrate`
 4. Build frontend assets
@@ -63,6 +63,7 @@ How else can you improve the application?
   - Throttled per client IP; exceeding the quota returns HTTP 429.
 - `POST /api/conversations/{id}/messages/{message_id}/feedback/` → submit/update feedback on an AI response (`is_helpful`, optional `comment`)
 - `GET /api/insights/` → feedback aggregates (totals, per-conversation stats, recent submissions)
+- `POST /api/insights/actionable/` → request Gemini-generated actionable recommendations based on the current feedback summary (throttled per client IP).
 
 ### Tests
 
@@ -78,6 +79,6 @@ How else can you improve the application?
 - If `GEMINI_API_KEY` is missing, sending a message returns HTTP 502 with a clear error.
 - The chat UI now includes helpful/not helpful toggles with optional comments per AI answer and an Insights dashboard fed by the new API.
 - Conversations can be deleted from the sidebar (and via `DELETE /api/conversations/{id}/`), which cascades associated messages and feedback.
-- Message creation is rate-limited; adjust `MESSAGE_RATE_LIMIT` if you need a higher/lower threshold.
+- Message creation is rate-limited; adjust `MESSAGE_RATE_LIMIT` if you need a different quota. Actionable-insights generation is likewise throttled via `INSIGHTS_RATE_LIMIT`.
 - The frontend polling interval is 3s; max message length is 1000 chars.
 - The dev server for Vite (`npm run dev`) is available but not wired into templates; the template loads built assets from `static/app/`. If you want HMR, we can add a dev switch.

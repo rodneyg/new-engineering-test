@@ -68,6 +68,9 @@ const state = {
   insights: null as Insights | null,
   insightsLoading: false,
   insightsError: '',
+  actionableInsights: '',
+  actionableLoading: false,
+  actionableError: '',
 }
 
 async function api<T>(url: string, opts: RequestInit = {}): Promise<T> {
@@ -254,10 +257,27 @@ async function loadInsights() {
   try {
     const data = await api<Insights>('insights/')
     state.insights = data
+    state.actionableInsights = ''
+    state.actionableError = ''
   } catch (err) {
     state.insightsError = err instanceof Error ? err.message : String(err)
   } finally {
     state.insightsLoading = false
+    render()
+  }
+}
+
+async function generateActionableInsights() {
+  state.actionableLoading = true
+  state.actionableError = ''
+  render()
+  try {
+    const data = await api<{ insights: string }>('insights/actionable/', { method: 'POST' })
+    state.actionableInsights = data.insights
+  } catch (err) {
+    state.actionableError = err instanceof Error ? err.message : String(err)
+  } finally {
+    state.actionableLoading = false
     render()
   }
 }
@@ -373,6 +393,10 @@ function render() {
   })
   document.getElementById('refresh-insights')?.addEventListener('click', async () => {
     await loadInsights()
+  })
+  document.getElementById('generate-actionable')?.addEventListener('click', async () => {
+    if (state.actionableLoading) return
+    await generateActionableInsights()
   })
 
   if (!state.showInsights) {
@@ -519,6 +543,42 @@ function renderInsightsView(): string {
   }
 
   const insights = state.insights
+  const actionableButtonLabel = state.actionableInsights ? 'Refresh Insights' : 'Generate Insights'
+  const actionableButtonClass = state.actionableLoading
+    ? 'btn btn-primary opacity-70 cursor-wait'
+    : 'btn btn-primary shadow'
+  let actionableBody = ''
+  if (state.actionableLoading) {
+    actionableBody = '<div class="text-gray-500 text-sm animate-pulse">Analyzing feedback…</div>'
+  } else if (state.actionableError) {
+    actionableBody = `<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">Failed to generate insights: ${escapeHtml(state.actionableError)}</div>`
+  } else if (state.actionableInsights) {
+    actionableBody = formatInsightsMarkdown(state.actionableInsights)
+  } else {
+    actionableBody =
+      '<div class="text-sm text-gray-500">Let Gemini review the trends and recommend the next actions to take.</div>'
+  }
+
+  const actionableSection = `
+    <section class="rounded border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-white p-5 shadow-sm space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h3 class="font-semibold text-blue-700">Actionable Insights</h3>
+          <p class="text-xs text-blue-600 mt-1 max-w-md">Gemini translates recent feedback into concrete, high-impact recommendations for the team.</p>
+        </div>
+        <button
+          id="generate-actionable"
+          class="${actionableButtonClass}"
+          ${state.actionableLoading ? 'disabled' : ''}
+        >
+          ${state.actionableLoading ? 'Analyzing…' : actionableButtonLabel}
+        </button>
+      </div>
+      <div class="bg-white border border-blue-100 rounded p-4 shadow-inner">
+        ${actionableBody}
+      </div>
+    </section>
+  `
   const conversationRows = insights.per_conversation.length
     ? insights.per_conversation
         .map(
@@ -564,6 +624,7 @@ function renderInsightsView(): string {
 
   return `
     <div class="flex-1 overflow-auto space-y-6">
+      ${actionableSection}
       <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="rounded border bg-white p-4">
           <div class="text-xs text-gray-500 uppercase">Total Feedback</div>
@@ -614,6 +675,27 @@ function renderInsightsView(): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
+}
+
+function formatInsightsMarkdown(markdown: string): string {
+  const lines = markdown.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line))
+  if (bulletLines.length === lines.length && bulletLines.length > 0) {
+    const items = bulletLines
+      .map((line, idx) => {
+        const content = line.replace(/^[-*]\s*/, '')
+        const step = (idx + 1).toString()
+        return `
+          <li class="flex items-start gap-3">
+            <span class="mt-1 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-xs font-semibold">${step}</span>
+            <span class="text-sm text-gray-700 leading-snug">${escapeHtml(content)}</span>
+          </li>
+        `
+      })
+      .join('')
+    return `<ul class="space-y-2 list-none">${items}</ul>`
+  }
+  return `<div class="whitespace-pre-line text-sm text-gray-700">${escapeHtml(markdown)}</div>`
 }
 
 function formatPercent(value: number): string {
