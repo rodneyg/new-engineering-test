@@ -63,6 +63,7 @@ const state = {
   lastSeq: 0,
   pollTimer: 0 as any,
   feedbackDrafts: {} as Record<number, string>,
+  feedbackChoices: {} as Record<number, 'helpful' | 'not' | null>,
   feedbackSubmitting: {} as Record<number, boolean>,
   showInsights: false,
   insights: null as Insights | null,
@@ -133,6 +134,7 @@ async function deleteConversation(conversationId: number) {
     state.messages = []
     state.lastSeq = 0
     state.feedbackDrafts = {}
+    state.feedbackChoices = {}
     state.feedbackSubmitting = {}
     if (next) {
       selectConversation(next.id)
@@ -154,6 +156,7 @@ function selectConversation(conversationId: number) {
   state.messages = []
   state.lastSeq = 0
   state.feedbackDrafts = {}
+  state.feedbackChoices = {}
   state.feedbackSubmitting = {}
   state.showInsights = false
   render()
@@ -216,8 +219,15 @@ async function sendMessage(text: string) {
   }
 }
 
-async function submitFeedback(messageId: number, isHelpful: boolean) {
+async function submitFeedback(messageId: number) {
   if (!state.current) return
+  const msg = state.messages.find((m) => m.id === messageId)
+  const existingChoice = msg?.feedback ? (msg.feedback.is_helpful ? 'helpful' : 'not') : null
+  const choice = state.feedbackChoices[messageId] ?? existingChoice
+  if (!choice) {
+    alert('Please mark whether the response was helpful before submitting.')
+    return
+  }
   const comment = (state.feedbackDrafts[messageId] ?? '').trim()
   state.feedbackSubmitting[messageId] = true
   render()
@@ -227,14 +237,14 @@ async function submitFeedback(messageId: number, isHelpful: boolean) {
       `conversations/${state.current.id}/messages/${messageId}/feedback/`,
       {
         method: 'POST',
-        body: JSON.stringify({ is_helpful: isHelpful, comment }),
+        body: JSON.stringify({ is_helpful: choice === 'helpful', comment }),
       }
     )
-    const msg = state.messages.find((m) => m.id === messageId)
     if (msg) {
       msg.feedback = feedback
     }
     state.feedbackDrafts[messageId] = feedback.comment ?? ''
+    state.feedbackChoices[messageId] = feedback.is_helpful ? 'helpful' : 'not'
     if (state.showInsights) {
       await loadInsights()
     } else {
@@ -290,12 +300,46 @@ function stopPolling() {
   if (state.pollTimer) clearInterval(state.pollTimer)
 }
 
-function ensureFeedbackDrafts() {
+function ensureFeedbackState() {
   state.messages.forEach((m) => {
-    if (m.role === 'ai' && state.feedbackDrafts[m.id] === undefined) {
+    if (m.role !== 'ai') return
+    if (state.feedbackDrafts[m.id] === undefined) {
       state.feedbackDrafts[m.id] = m.feedback?.comment ?? ''
     }
+    if (state.feedbackChoices[m.id] === undefined) {
+      const choice = m.feedback ? (m.feedback.is_helpful ? 'helpful' : 'not') : null
+      state.feedbackChoices[m.id] = choice
+    }
   })
+}
+
+function getFeedbackUiState(message: Message) {
+  const existingChoice = message.feedback ? (message.feedback.is_helpful ? 'helpful' : 'not') : null
+  const choice = state.feedbackChoices[message.id] ?? existingChoice
+  const draft = state.feedbackDrafts[message.id] ?? ''
+  const existingComment = message.feedback?.comment ?? ''
+  const hasSelection = choice !== null
+  const baselineDirty = !message.feedback && hasSelection
+  const changedChoice = choice !== existingChoice
+  const changedComment = draft !== existingComment
+  const isDirty = baselineDirty || changedChoice || changedComment
+  return { choice, existingChoice, draft, existingComment, hasSelection, isDirty }
+}
+
+function updateFeedbackButtonState(messageId: number) {
+  const button = document.querySelector(`[data-submit-feedback="${messageId}"]`) as HTMLButtonElement | null
+  if (!button) return
+  const msg = state.messages.find((m) => m.id === messageId)
+  if (!msg) return
+  const { hasSelection, isDirty } = getFeedbackUiState(msg)
+  const submitting = !!state.feedbackSubmitting[messageId]
+  const disabled = submitting || !hasSelection || (!isDirty && !!msg.feedback)
+  button.disabled = disabled
+  button.textContent = submitting
+    ? 'Submitting…'
+    : msg.feedback
+    ? 'Update Feedback'
+    : 'Submit Feedback'
 }
 
 function scrollChatToBottom() {
@@ -304,7 +348,7 @@ function scrollChatToBottom() {
 }
 
 function render() {
-  ensureFeedbackDrafts()
+  ensureFeedbackState()
   root.innerHTML = `
   <div class="mx-auto max-w-5xl grid grid-cols-1 md:grid-cols-4 gap-4 p-4">
     <aside class="md:col-span-1 space-y-2">
@@ -419,16 +463,29 @@ function render() {
     el.addEventListener('input', (event) => {
       const target = event.target as HTMLTextAreaElement
       const mid = Number(target.dataset.feedbackComment)
+      if (!Number.isFinite(mid)) return
       state.feedbackDrafts[mid] = target.value
+      updateFeedbackButtonState(mid)
     })
   })
   document.querySelectorAll('[data-feedback]')?.forEach((el) => {
-    el.addEventListener('click', async (event) => {
+    el.addEventListener('click', (event) => {
+      event.preventDefault()
       const btn = event.currentTarget as HTMLButtonElement
       const mid = Number(btn.dataset.mid)
       const kind = btn.dataset.feedback
-      if (state.feedbackSubmitting[mid]) return
-      await submitFeedback(mid, kind === 'helpful')
+      if (!Number.isFinite(mid) || state.feedbackSubmitting[mid]) return
+      state.feedbackChoices[mid] = kind === 'helpful' ? 'helpful' : 'not'
+      render()
+    })
+  })
+  document.querySelectorAll('[data-submit-feedback]')?.forEach((el) => {
+    el.addEventListener('click', async (event) => {
+      event.preventDefault()
+      const btn = event.currentTarget as HTMLButtonElement
+      const mid = Number(btn.dataset.submitFeedback)
+      if (!Number.isFinite(mid) || state.feedbackSubmitting[mid]) return
+      await submitFeedback(mid)
     })
   })
 }
@@ -470,20 +527,28 @@ function renderMessage(message: Message): string {
 
 function renderFeedbackControls(message: Message): string {
   const submitting = !!state.feedbackSubmitting[message.id]
-  const helpfulActive = message.feedback?.is_helpful === true
-  const notHelpfulActive = message.feedback?.is_helpful === false
+  const { choice, existingChoice, draft, existingComment, hasSelection, isDirty } =
+    getFeedbackUiState(message)
+  const helpfulActive = choice === 'helpful'
+  const notHelpfulActive = choice === 'not'
   const helpfulClass = helpfulActive
-    ? 'bg-green-500 text-white border-green-500'
-    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+    ? 'border border-green-500 bg-green-500 text-white shadow-sm'
+    : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
   const notHelpfulClass = notHelpfulActive
-    ? 'bg-red-500 text-white border-red-500'
-    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-  const draft = state.feedbackDrafts[message.id] ?? ''
+    ? 'border border-red-500 bg-red-500 text-white shadow-sm'
+    : 'border border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+  const buttonLabel = message.feedback ? 'Update Feedback' : 'Submit Feedback'
+  const buttonText = submitting ? 'Submitting…' : buttonLabel
+  const submitDisabled = submitting || !hasSelection || (!isDirty && !!message.feedback)
   const statusLine = message.feedback
-    ? `<div class="text-xs text-gray-500">Marked ${
-        message.feedback.is_helpful ? 'helpful' : 'not helpful'
+    ? `<div class="text-xs text-gray-500">Last submitted ${
+        message.feedback.is_helpful ? 'as helpful' : 'as not helpful'
       } • ${new Date(message.feedback.created_at).toLocaleString()}</div>`
     : ''
+  const helperLine =
+    !hasSelection && !message.feedback
+      ? '<div class="text-xs text-amber-600">Select helpful or not helpful, then submit your feedback.</div>'
+      : ''
   return `
     <div class="mt-2 border-t pt-2 text-sm space-y-2">
       <div class="text-xs text-gray-500 uppercase tracking-wide">Was this helpful?</div>
@@ -491,7 +556,7 @@ function renderFeedbackControls(message: Message): string {
         <button
           data-feedback="helpful"
           data-mid="${message.id}"
-          class="px-3 py-1 rounded border text-sm transition ${helpfulClass}"
+          class="px-3 py-1 rounded text-sm transition ${helpfulClass}"
           ${submitting ? 'disabled' : ''}
         >
           Helpful
@@ -499,12 +564,13 @@ function renderFeedbackControls(message: Message): string {
         <button
           data-feedback="not"
           data-mid="${message.id}"
-          class="px-3 py-1 rounded border text-sm transition ${notHelpfulClass}"
+          class="px-3 py-1 rounded text-sm transition ${notHelpfulClass}"
           ${submitting ? 'disabled' : ''}
         >
           Not Helpful
         </button>
       </div>
+      ${helperLine}
       <label class="block text-xs text-gray-500">Optional comment</label>
       <textarea
         data-feedback-comment="${message.id}"
@@ -512,7 +578,23 @@ function renderFeedbackControls(message: Message): string {
         rows="2"
         ${submitting ? 'disabled' : ''}
       >${escapeHtml(draft)}</textarea>
-      ${statusLine}
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <button
+          data-submit-feedback="${message.id}"
+          class="btn btn-primary self-start"
+          ${submitDisabled ? 'disabled' : ''}
+        >
+          ${buttonText}
+        </button>
+        <div class="space-y-1 text-[11px] sm:text-xs text-gray-500">
+          ${statusLine}
+          ${
+            existingChoice && draft !== existingComment
+              ? '<div class="text-[11px] text-blue-600">Comment updated but not yet submitted.</div>'
+              : ''
+          }
+        </div>
+      </div>
     </div>
   `
 }
