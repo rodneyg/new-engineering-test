@@ -1,6 +1,6 @@
 import json
 import pytest
-from django.urls import reverse
+from chat.models import Conversation, Message, MessageFeedback
 
 
 @pytest.mark.django_db
@@ -41,3 +41,60 @@ def test_message_flow_with_mocked_gemini(client, monkeypatch):
     assert messages.status_code == 200
     data = messages.json()
     assert len(data["results"]) == 2
+
+
+@pytest.mark.django_db
+def test_submit_feedback_and_update(client):
+    conv = Conversation.objects.create(title="Feedback Test")
+    ai_msg = Message.objects.create(conversation=conv, role=Message.ROLE_AI, text="Assistant reply")
+    url = f"/api/conversations/{conv.id}/messages/{ai_msg.id}/feedback/"
+
+    first = client.post(url, data=json.dumps({"is_helpful": True}), content_type="application/json")
+    assert first.status_code == 201
+    payload = first.json()
+    assert payload["is_helpful"] is True
+    assert payload["comment"] == ""
+
+    second = client.post(
+        url,
+        data=json.dumps({"is_helpful": False, "comment": "Needs work"}),
+        content_type="application/json",
+    )
+    assert second.status_code == 200
+    feedback = MessageFeedback.objects.get(message=ai_msg)
+    assert feedback.is_helpful is False
+    assert feedback.comment == "Needs work"
+
+
+@pytest.mark.django_db
+def test_feedback_rejected_for_user_message(client):
+    conv = Conversation.objects.create(title="Feedback Test")
+    user_msg = Message.objects.create(conversation=conv, role=Message.ROLE_USER, text="Hello")
+    url = f"/api/conversations/{conv.id}/messages/{user_msg.id}/feedback/"
+
+    resp = client.post(url, data=json.dumps({"is_helpful": True}), content_type="application/json")
+    assert resp.status_code == 400
+    assert resp.json()["detail"].lower().startswith("feedback is only")
+
+
+@pytest.mark.django_db
+def test_insights_endpoint(client):
+    conv1 = Conversation.objects.create(title="First")
+    conv2 = Conversation.objects.create(title="Second")
+    msg1 = Message.objects.create(conversation=conv1, role=Message.ROLE_AI, text="Answer one")
+    msg2 = Message.objects.create(conversation=conv1, role=Message.ROLE_AI, text="Answer two")
+    msg3 = Message.objects.create(conversation=conv2, role=Message.ROLE_AI, text="Answer three")
+
+    MessageFeedback.objects.create(message=msg1, is_helpful=True, comment="")
+    MessageFeedback.objects.create(message=msg2, is_helpful=False, comment="Not great")
+    MessageFeedback.objects.create(message=msg3, is_helpful=True, comment="Nice")
+
+    resp = client.get("/api/insights/")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_feedback"] == 3
+    assert data["helpful_count"] == 2
+    assert data["not_helpful_count"] == 1
+    assert isinstance(data["per_conversation"], list)
+    assert any(item["conversation_id"] == conv1.id for item in data["per_conversation"])
+    assert len(data["recent_feedback"]) <= 10
