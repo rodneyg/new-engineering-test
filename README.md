@@ -32,36 +32,49 @@ How else can you improve the application?
 ### Setup
 
 1. Install Python deps
-   - `make uv-sync`
+   - `uv sync`
 2. Env vars
    - `cp .env.example .env`
    - Set `GEMINI_API_KEY` in `.env`
+   - Optional: change `GEMINI_MODEL` (defaults to `models/gemini-2.5-flash-lite`)
 3. Initialize DB
-   - `make migrate`
+   - `uv run python manage.py migrate`
 4. Build frontend assets
-   - `make build-frontend`
+   - `npm install`
+   - `npm run build`
 
 ### Run (development)
 
 - Start Django dev server:
-  - `make run`
+  - `uv run python manage.py runserver`
   - Requires `GEMINI_API_KEY` to be set; the server exits with an error if missing.
 - Open `http://127.0.0.1:8000/` — the Vite-built app is served via Django templates.
+- When DEBUG is on (default via `.env`), Gemini failures return a placeholder AI reply so the feedback flow can be tested offline.
 
 ### APIs
 
 - `POST /api/conversations/` → create conversation (optional `title`)
 - `GET /api/conversations/?offset=&limit=` → list conversations (newest first)
 - `GET /api/conversations/{id}/` → conversation details
+- `DELETE /api/conversations/{id}/` → delete a conversation (cascades messages & feedback)
 - `GET /api/conversations/{id}/messages?since=&limit=` → list messages after sequence
 - `POST /api/conversations/{id}/messages/` → send user message; returns `{ user_message, ai_message }`
+- `POST /api/conversations/{id}/messages/{message_id}/feedback/` → submit/update feedback on an AI response (`is_helpful`, optional `comment`)
+- `GET /api/insights/` → feedback aggregates (totals, per-conversation stats, recent submissions)
 
 ### Tests
 
-- `make test`
+- `UV_CACHE_DIR=.uv-cache uv run pytest`
+
+### Tooling
+
+- List Gemini models that support content generation:
+  - `UV_CACHE_DIR=.uv-cache uv run python scripts/list_gemini_models.py`
 
 ### Notes
 
 - If `GEMINI_API_KEY` is missing, sending a message returns HTTP 502 with a clear error.
+- The chat UI now includes helpful/not helpful toggles with optional comments per AI answer and an Insights dashboard fed by the new API.
+- Conversations can be deleted from the sidebar (and via `DELETE /api/conversations/{id}/`), which cascades associated messages and feedback.
 - The frontend polling interval is 3s; max message length is 1000 chars.
 - The dev server for Vite (`npm run dev`) is available but not wired into templates; the template loads built assets from `static/app/`. If you want HMR, we can add a dev switch.
