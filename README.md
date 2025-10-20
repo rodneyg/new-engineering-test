@@ -78,6 +78,8 @@ How else can you improve the application?
 
 - If `GEMINI_API_KEY` is missing, sending a message returns HTTP 502 with a clear error.
 - The chat UI now includes helpful/not helpful toggles with optional comments per AI answer and an Insights dashboard fed by the new API.
+  - To log a comment-only insight, type in the feedback textarea, pick helpful/not, and click **Submit Feedback** — the button only lights up when there’s something to update.
+  - To generate AI-curated recommendations, collect a few feedback entries, open **View Insights**, and hit **Generate Insights**; Gemini will summarize the trends into action items.
 - Conversations can be deleted from the sidebar (and via `DELETE /api/conversations/{id}/`), which cascades associated messages and feedback.
 - Message creation is rate-limited; adjust `MESSAGE_RATE_LIMIT` if you need a different quota. Actionable-insights generation is likewise throttled via `INSIGHTS_RATE_LIMIT`.
 - The frontend polling interval is 3s; max message length is 1000 chars.
